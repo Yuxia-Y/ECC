@@ -713,6 +713,29 @@ model: opus
   perl/            # Perl 特定模式和工具
 ```
 
+### 多 Agent 通信通道（ADR-0001）
+
+子代理可通过追加日志 `.claude/chat/channel.jsonl` 互相提问、广播状态、并行派发任务。主代理通过 `/multi-agent-chat` skill（或 `node .claude/chat/tick.js analyze`）排空队列。
+
+```json
+{
+  "ts": "2026-07-08T18:30:00.123Z#0001",
+  "from": "planner",
+  "to": "*" | "architect" | ["code-reviewer", "security-reviewer"],
+  "kind": "info" | "task" | "question",
+  "msg": "REST 还是 GraphQL？",
+  "status": "pending",
+  "in_reply_to": "<origTs>"
+}
+```
+
+- `to === "*"` — 广播（注入到所有运行中 agent 的上下文，不派生新 session）
+- `to === "<agent>"` — 私聊（单次 `Agent` tool 调用）
+- `to === ["a","b"]` — 群发（并行 `Agent` tool 调用，收集所有回答）
+- `kind` — `info`（不要求回信）/ `task`、`question`（要求回信）
+
+会话结束的 Stop hook（`stop:channel-check`，>2 分钟 stale pending）会输出警告；超过 30 天的消息会自动归档到 `.claude/chat/archive/channel-YYYY-MM.jsonl`。完整协议与权衡见 [`.claude/chat/README.md`](.claude/chat/README.md) 和 [ADR](docs/adr/0001-multi-agent-channel-protocol.md)。关键约束：**Claude Code 架构下 subagent 不能派生 subagent**，因此主代理始终是实际调度者。
+
 ---
 
 ## 运行测试

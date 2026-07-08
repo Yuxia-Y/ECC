@@ -49,6 +49,7 @@ The project is organized into several core components:
 - `/build-fix` - Fix build errors
 - `/learn` - Extract patterns from sessions
 - `/skill-create` - Generate skills from git history
+- `/multi-agent-chat` - Drain `.claude/chat/channel.jsonl` and route pending messages between subagents (ADR-0001)
 
 ## Development Notes
 
@@ -78,5 +79,31 @@ Use the following skills when working on related files:
 | `README.md` | `/readme` |
 | `.github/workflows/*.yml` | `/ci-workflow` |
 | `*.tsx`, `*.jsx`, `components/**` | `react-patterns`, `react-testing` — for React-specific work invoke `/react-review`, `/react-build`, `/react-test` |
+| `.claude/chat/channel.jsonl` (any pending) | `/multi-agent-chat` — drain queue and route between subagents |
 
 When spawning subagents, always pass conventions from the respective skill into the agent's prompt.
+
+## Multi-Agent Chat Routing
+
+The repository implements a multi-agent communication channel per ADR-0001 (`.claude/chat/channel.jsonl`). As the main agent, you are responsible for **draining the queue** whenever a subagent's work might depend on another role's input.
+
+**When to run `/multi-agent-chat`** (or directly `node .claude/chat/tick.js analyze`):
+
+- A subagent's last message ended with "asking" another role (planner → architect, etc.).
+- The user says "tick the channel", "drain pending", "advance the queue", "is anyone waiting?".
+- A workflow has been silent for a while — `.claude/chat/channel.jsonl` may have new pending messages from background subagents.
+- Before final summary — pair with `node .claude/chat/check-channel.js` to confirm no stale messages.
+
+**Workflow per tick:**
+
+1. Run `node .claude/chat/tick.js analyze` to get `{broadcasts, groups, dms}` buckets.
+2. Dispatch each bucket per the rules in `skills/multi-agent-chat/SKILL.md` Step 2.
+   - `broadcasts` (`to === "*"`) → inject context into all running agents, no new sessions.
+   - `groups` (`to === ["a","b"]`) → parallel `Agent` tool calls with the same prompt.
+   - `dms` (`to === "<agent>"`) → single `Agent` tool call.
+3. For every answer, write it back: `node .claude/chat/tick.js answer <origTs> <from> <to> <kind> <msg>`.
+4. Repeat until `analyze` returns empty buckets.
+
+**Do not** write directly to the channel from the main agent unless passing along a subagent's message — that's what subagents are for. **Do not** edit `channel.jsonl` directly; use the helper scripts.
+
+A Stop hook (`stop:channel-check`) also warns at session end if any pending messages have been waiting >2 minutes. If you see that warning, run `/multi-agent-chat` immediately.

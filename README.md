@@ -1098,6 +1098,29 @@ rules/
 
 See [`rules/README.md`](rules/README.md) for installation and structure details.
 
+### Multi-Agent Chat Channel (ADR-0001)
+
+Subagents can ask each other questions, broadcast status, and fan out parallel work via an append-only message log at `.claude/chat/channel.jsonl`. The main agent drains the queue via the `/multi-agent-chat` skill (or `node .claude/chat/tick.js analyze`).
+
+```json
+{
+  "ts": "2026-07-08T18:30:00.123Z#0001",
+  "from": "planner",
+  "to": "*" | "architect" | ["code-reviewer", "security-reviewer"],
+  "kind": "info" | "task" | "question",
+  "msg": "REST or GraphQL?",
+  "status": "pending",
+  "in_reply_to": "<origTs>"
+}
+```
+
+- `to === "*"` — broadcast (inject into running agents' context, no new sessions).
+- `to === "<agent>"` — direct message (single `Agent` tool call).
+- `to === ["a","b"]` — group (parallel `Agent` tool calls, collect all answers).
+- `kind` — `info` (no reply owed), `task`/`question` (reply required).
+
+A Stop hook (`stop:channel-check`, >2 min stale pending) warns at session end; messages older than 30 days are auto-archived to `.claude/chat/archive/channel-YYYY-MM.jsonl`. See [`.claude/chat/README.md`](.claude/chat/README.md) and [the ADR](docs/adr/0001-multi-agent-channel-protocol.md) for the full protocol and trade-offs (notably: subagents cannot spawn subagents in Claude Code, so the main agent is always the actual scheduler).
+
 ---
 
 ## Which Agent Should I Use?

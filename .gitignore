@@ -102,3 +102,7 @@ ecc2/target/
 assets/images/security/badrudi-exploit.mp4
 
 .aider*
+
+# Multi-agent chat runtime data (ADR-0001)
+.claude/chat/channel.jsonl
+.claude/chat/archive/
