@@ -1,13 +1,13 @@
 {
   "name": "ecc",
-  "version": "2.0.0",
-  "description": "Harness-native ECC plugin for engineering teams - 67 agents, 277 skills, 93 legacy command shims, reusable hooks, rules, MCP conventions, and operator workflows for Claude Code plus adjacent agent harnesses",
+  "version": "0.1.0",
+  "description": "MGTV engineering team fork of ECC - role-based agents, skills, hooks, rules, MCP conventions, and operator workflows for Claude Code. Forked from affaan-m/everything-claude-code.",
   "author": {
-    "name": "Affaan Mustafa",
-    "url": "https://x.com/affaanmustafa"
+    "name": "Yx (MGTV Team)",
+    "url": "https://github.com/Yuxia-Y"
   },
-  "homepage": "https://ecc.tools",
-  "repository": "https://github.com/affaan-m/ECC",
+  "homepage": "https://github.com/Yuxia-Y/ECC",
+  "repository": "https://github.com/Yuxia-Y/ECC",
   "license": "MIT",
   "keywords": [
     "claude-code",

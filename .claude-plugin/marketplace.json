@@ -1,24 +1,24 @@
 {
   "name": "ecc",
   "owner": {
-    "name": "Affaan Mustafa",
-    "email": "me@affaanmustafa.com"
+    "name": "Yx (MGTV Team)",
+    "email": "yuxia-y@users.noreply.github.com"
   },
   "metadata": {
-    "description": "Harness-native ECC skills, hooks, rules, MCP conventions, and operator workflows"
+    "description": "MGTV engineering team fork of ECC - role-based agents, skills, hooks, rules, MCP conventions, and operator workflows for Claude Code"
   },
   "plugins": [
     {
       "name": "ecc",
       "source": "./",
-      "description": "Harness-native ECC operator layer - 67 agents, 277 skills, 93 legacy command shims, reusable hooks, rules, selective install profiles, and production-ready workflows for Claude Code, Codex, OpenCode, Cursor, and related agent harnesses",
-      "version": "2.0.0",
+      "description": "MGTV team role-based agents and workflows for Claude Code. Forked from affaan-m/everything-claude-code.",
+      "version": "0.1.0",
       "author": {
-        "name": "Affaan Mustafa",
-        "email": "me@affaanmustafa.com"
+        "name": "Yx (MGTV Team)",
+        "email": "yuxia-y@users.noreply.github.com"
       },
-      "homepage": "https://ecc.tools",
-      "repository": "https://github.com/affaan-m/ECC",
+      "homepage": "https://github.com/Yuxia-Y/ECC",
+      "repository": "https://github.com/Yuxia-Y/ECC",
       "license": "MIT",
       "keywords": [
         "agents",
