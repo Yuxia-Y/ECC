@@ -164,7 +164,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**完成！** 你现在可以使用 67 个代理、277 个技能和 93 个命令。
+**完成！** 你现在可以使用 **12 个 specialist agent**、数百个技能和命令。
 
 ### multi-* 命令需要额外配置
 
@@ -179,6 +179,108 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 > - `~/.claude/.ccg/prompts/*`
 >
 > 未安装 `ccg-workflow` 时，这些 `multi-*` 命令将无法正常运行。
+
+---
+
+## 多 Agent 使用流程（MGTV fork）
+
+本 fork 精简到 **12 个 specialist agent**（上游 67 → 12），按你的工作流重新组织（PM 为主 agent + 9 角色 + 3 辅助）。配合 channel 协议（ADR-0001）实现多角色协作。
+
+### 0. 在测试项目创建 kernel `CLAUDE.md`
+
+主 agent 启动后读这个文件做派发决策。**没 kernel 就只自己干**：
+
+```markdown
+# CLAUDE.md — Agentic OS Kernel
+
+## Identity
+你是 [项目] 的 COO。non-trivial 工作**不直接写代码**，只路由到 registry 里的 specialist。
+trivial 改动（单行 typo / < 3 文件 / 纯文档）才自己 Edit/Write。
+
+## Agent Registry（12 个）
+
+| 任务类型 | 派给 | 触发 |
+|---------|------|------|
+| 计划 / 拆解 / 多文件 | `planner` | "设计"、"拆解"、"怎么实现" |
+| 架构 / 技术选型 | `architect` | "架构"、"扩展性"、"技术选型" |
+| 实现 / 写代码（任语言） | `developer` | "实现"、"添加"、"重构" + 文件后缀 |
+| 代码 review | `code-reviewer` | "review"、"查质量" |
+| 独立测试 / QA 白盒 | `tester` | "测试 X"、"加测试"、"验证行为" |
+| E2E / 黑盒 / UI 验证 | `e2e-runner` | "E2E"、"playwright"、"浏览器"、"截图 bug" |
+| UI / 交互 / 视觉设计 | `interaction-designer` | "设计 UI"、"mockup"、"长什么样" |
+| 调研现有代码 | `code-explorer` | "X 怎么 work"、"trace"、"调查" |
+| 文档 / CODEMAP 同步 | `doc-updater` | "更新文档"、"CODEMAP"、"ADR" |
+| Security audit（与 review 并行） | `security-reviewer` | "安全"、"OWASP"、"漏洞" |
+| 吞异常排查 | `silent-failure-hunter` | "为什么没报错"、"empty catch" |
+| 死代码清理 | `refactor-cleaner` | "删死代码"、"清理"、"unused" |
+
+## 派发规则
+1. 解析意图 → 匹配 registry → 派 `Agent tool` 给对应 specialist
+2. 复杂任务链：`planner` → `developer` → `code-reviewer + security-reviewer`（并行）→ `tester`
+3. 用户说简单修（单行 typo / 1 文件）→ 主 agent 自己 Edit
+
+## 跨角色通信
+Subagent 之间**不能直接调用**，要走 `.claude/chat/channel.jsonl`。主 agent 看到 pending 就调 `/multi-agent-chat` 调度。
+```
+
+### 1. 启动 session 前先激活 agentic-os skill
+
+在第一句 prompt 里说：
+
+```
+先加载 agentic-os skill，然后按 CLAUDE.md kernel 路由任务
+```
+
+或显式：
+
+```
+/skill agentic-os
+```
+
+加载后主 agent 才会按 registry 派发，否则它默认"自己干"。
+
+### 2. 派发触发（描述自动匹配）
+
+每个 agent 的 `description` 前置字段（Use when / Don't use when）是主 agent 派发的依据。**用户不用点名 agent**，自然语言描述就能触发。
+
+| 你说 | 主 agent 派给 |
+|------|--------------|
+| "帮我设计 SSO 登录后端" | `planner` |
+| "加个支付 API" | `developer` |
+| "帮我查一下 src/auth 怎么 work" | `code-explorer` |
+| "review 一下这个 PR" | `code-reviewer` |
+| "测一下 login 表单的边界 case" | `tester` |
+| "design 这个新的 dashboard 页面" | `interaction-designer` |
+| "为什么这个 catch 没报错" | `silent-failure-hunter` |
+
+### 3. 跨 agent 通信（ADR-0001）
+
+12 个 agent 之间**不能**互相调用，只能写 channel。例：planner 想知道用 REST 还是 GraphQL：
+
+```bash
+node .claude/chat/channel.js append \
+  '{"from":"planner","to":"architect","kind":"question","msg":"REST 还是 GraphQL?"}'
+```
+
+主 agent 看到 pending 消息会自动：
+1. 调 `node .claude/chat/tick.js analyze` 分类（DM/group/broadcast）
+2. 派对应 subagent 回答
+3. 调 `node .claude/chat/tick.js answer <ts> ...` 回写
+
+每个 agent 都自带 "Working with Other Agents" 段，列相关 peer + channel 写命令。
+
+### 4. 验证清单
+
+跑 `docs/verification/phase-2.md` 的 6 个场景（私聊 / 调度 / 并行群发 / broadcast / description 触发）确认一切正常。
+
+### 5. 常见错误
+
+| 现象 | 排查 |
+|------|------|
+| 主 agent **不**派发，自己 Edit | 检查 `CLAUDE.md` 是否在测试项目根目录 |
+| 派发给了 python-developer 等不存在的 agent | 旧版本残留 — 我们的 22→12 重构后只剩 `developer`，具体文件：`archive/agents-v1-21/` |
+| Channel 写了消息但没回答 | 主 agent 没看到 pending → 用户 prompt 加"先查 .claude/chat/channel.jsonl 有没有 pending" |
+| Agent 报 "channel not found" | 没装 plugin，正确安装见 `docs/verification/load-and-test-guide.md` |
 
 ---
 

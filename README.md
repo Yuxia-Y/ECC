@@ -439,7 +439,9 @@ If you stacked methods, clean up in this order:
 /plugin list ecc@ecc
 ```
 
-**That's it!** You now have access to 67 agents, 277 skills, and 93 legacy command shims.
+**That's it!** You now have access to **12 specialist agents**, hundreds of skills, and command shims (this MGTV fork consolidates the upstream 67 agents).
+
+> 💡 **For multi-agent workflow**, see `skills/agentic-os/SKILL.md`. Drop the Kernel CLAUDE.md template into your test project so the main agent knows when to dispatch to `planner` / `developer` / `tester` / etc. Load the skill with `/skill agentic-os` at session start.
 
 ### Dashboard GUI
 
