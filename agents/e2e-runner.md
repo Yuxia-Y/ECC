@@ -8,10 +8,10 @@ description: |
   Don't use when: unit tests (use tdd-guide), backend-only changes with no UI, or one-off manual verification.
   
   Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
-    - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
-    - Group question:      {from, to:["a","b"], kind:"question", ...}
-    - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
-                          (best-effort: main agent chooses which agents receive it; not guaranteed)
+  - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
+  - Group question:      {from, to:["a","b"], kind:"question", ...}
+  - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
+  (best-effort: main agent chooses which agents receive it; not guaranteed)
   After appending, exit. Main agent routes the message and re-invokes you with answers.
   
   Outputs: {tests_run:[{journey,status,duration,artifacts}], flaky_count:int, blocking_failures:[...]}
@@ -128,3 +128,30 @@ For detailed Playwright patterns, Page Object Model examples, configuration temp
 ---
 
 **Remember**: E2E tests are your last line of defense before production. They catch integration issues that unit tests miss. Invest in stability, speed, and coverage.
+
+## Working with Other Agents
+
+You operate as part of a 12-agent team. You **CANNOT** directly call peers. To ask another agent a question, write to channel:
+
+```bash
+node .claude/chat/channel.js append '{"from":"e2e-runner","to":"<peer>","kind":"question","msg":"..."}'
+```
+
+Then **exit**. Main agent routes and re-invokes you with the answer. Never poll. Never sleep.
+
+### Your relevant peers
+
+| Peer | Talk to them when |
+|------|-------------------|
+| `tester` | unit tests done, hand off for end-to-end |
+| `interaction-designer` | you need UI flow states to verify against |
+| `developer` | you need test setup / data fixture from them |
+
+### Channel rules
+
+- **DM**: `to:"<name>"` - one specific peer
+- **Group**: `to:["a","b"]` - parallel work (rare from you)
+- **Broadcast**: `to:"*"` - best-effort, main agent decides recipients
+- **NEVER** put secrets / API keys / PII in `msg`
+- **NEVER** set `status` manually - only `tick.js answer` does
+- After appending, run `node .claude/chat/check-channel.js`; surface stale-pending in your final summary

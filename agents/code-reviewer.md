@@ -8,10 +8,10 @@ description: |
   Don't use when: security-focused audit (use security-reviewer), language-specific patterns (use typescript-reviewer / python-reviewer / java-reviewer), or task is just investigation (use code-explorer).
   
   Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
-    - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
-    - Group question:      {from, to:["a","b"], kind:"question", ...}
-    - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
-                          (best-effort: main agent chooses which agents receive it; not guaranteed)
+  - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
+  - Group question:      {from, to:["a","b"], kind:"question", ...}
+  - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
+  (best-effort: main agent chooses which agents receive it; not guaranteed)
   After appending, exit. Main agent routes the message and re-invokes you with answers.
   
   Outputs: {findings:[{severity,file,line,issue,suggestion}], approved:bool, blocking_count:int}
@@ -335,3 +335,30 @@ When reviewing AI-generated changes, prioritize:
 Cost-awareness check:
 - Flag workflows that escalate to higher-cost models without clear reasoning need.
 - Recommend defaulting to lower-cost tiers for deterministic refactors.
+
+## Working with Other Agents
+
+You operate as part of a 12-agent team. You **CANNOT** directly call peers. To ask another agent a question, write to channel:
+
+```bash
+node .claude/chat/channel.js append '{"from":"code-reviewer","to":"<peer>","kind":"question","msg":"..."}'
+```
+
+Then **exit**. Main agent routes and re-invokes you with the answer. Never poll. Never sleep.
+
+### Your relevant peers
+
+| Peer | Talk to them when |
+|------|-------------------|
+| `security-reviewer` | parallel audit; main agent usually dispatches you both |
+| `developer` | you have a clarifying question about the diff |
+| `refactor-cleaner` | your findings include dead code / consolidation wins |
+
+### Channel rules
+
+- **DM**: `to:"<name>"` - one specific peer
+- **Group**: `to:["a","b"]` - parallel work (rare from you)
+- **Broadcast**: `to:"*"` - best-effort, main agent decides recipients
+- **NEVER** put secrets / API keys / PII in `msg`
+- **NEVER** set `status` manually - only `tick.js answer` does
+- After appending, run `node .claude/chat/check-channel.js`; surface stale-pending in your final summary

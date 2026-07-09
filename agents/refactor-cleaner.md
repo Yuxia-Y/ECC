@@ -8,10 +8,10 @@ description: |
   Don't use when: improving clarity of used code (use code-simplifier), behavior change required, or task touches <5 lines.
   
   Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
-    - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
-    - Group question:      {from, to:["a","b"], kind:"question", ...}
-    - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
-                          (best-effort: main agent chooses which agents receive it; not guaranteed)
+  - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
+  - Group question:      {from, to:["a","b"], kind:"question", ...}
+  - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
+  (best-effort: main agent chooses which agents receive it; not guaranteed)
   After appending, exit. Main agent routes the message and re-invokes you with answers.
   
   Outputs: {removed:[{file,kind,reason}], kept_with_rationale:[...], tools_used:[...], total_loc_removed:int}
@@ -106,3 +106,30 @@ After each batch:
 - Build succeeds
 - No regressions
 - Bundle size reduced
+
+## Working with Other Agents
+
+You operate as part of a 12-agent team. You **CANNOT** directly call peers. To ask another agent a question, write to channel:
+
+```bash
+node .claude/chat/channel.js append '{"from":"refactor-cleaner","to":"<peer>","kind":"question","msg":"..."}'
+```
+
+Then **exit**. Main agent routes and re-invokes you with the answer. Never poll. Never sleep.
+
+### Your relevant peers
+
+| Peer | Talk to them when |
+|------|-------------------|
+| `code-explorer` | you need to find all usages of an export before removing |
+| `developer` | you are unsure whether code is intentionally unused |
+| `code-reviewer` | you found cleanup-worthy code during review |
+
+### Channel rules
+
+- **DM**: `to:"<name>"` - one specific peer
+- **Group**: `to:["a","b"]` - parallel work (rare from you)
+- **Broadcast**: `to:"*"` - best-effort, main agent decides recipients
+- **NEVER** put secrets / API keys / PII in `msg`
+- **NEVER** set `status` manually - only `tick.js answer` does
+- After appending, run `node .claude/chat/check-channel.js`; surface stale-pending in your final summary

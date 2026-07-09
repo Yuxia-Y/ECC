@@ -8,10 +8,10 @@ description: |
   Don't use when: change is trivial (<3 files single concern), purely investigative (use code-explorer), single-line fix, or pure documentation update (use doc-updater).
   
   Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
-    - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
-    - Group question:      {from, to:["a","b"], kind:"question", ...}
-    - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
-                          (best-effort: main agent chooses which agents receive it; not guaranteed)
+  - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
+  - Group question:      {from, to:["a","b"], kind:"question", ...}
+  - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
+  (best-effort: main agent chooses which agents receive it; not guaranteed)
   After appending, exit. Main agent routes the message and re-invokes you with answers.
   
   Outputs: {tasks:[{id,title,deps,risk,acceptance}], dependencies:[...], risks:[...], questions_for:[...]}
@@ -233,3 +233,31 @@ Each phase should be mergeable independently. Avoid plans that require all phase
 - Phases that cannot be delivered independently
 
 **Remember**: A great plan is specific, actionable, and considers both the happy path and edge cases. The best plans enable confident, incremental implementation.
+
+## Working with Other Agents
+
+You operate as part of a 12-agent team. You **CANNOT** directly call peers. To ask another agent a question, write to channel:
+
+```bash
+node .claude/chat/channel.js append '{"from":"planner","to":"<peer>","kind":"question","msg":"..."}'
+```
+
+Then **exit**. Main agent routes and re-invokes you with the answer. Never poll. Never sleep.
+
+### Your relevant peers
+
+| Peer | Talk to them when |
+|------|-------------------|
+| `architect` | you need tech-choice / feasibility input for a plan |
+| `developer` | you need an effort estimate for a task you broke down |
+| `tester` | you want a test-strategy opinion before handing tasks to dev |
+| `code-explorer` | your plan depends on understanding existing code first |
+
+### Channel rules
+
+- **DM**: `to:"<name>"` - one specific peer
+- **Group**: `to:["a","b"]` - parallel work (rare from you)
+- **Broadcast**: `to:"*"` - best-effort, main agent decides recipients
+- **NEVER** put secrets / API keys / PII in `msg`
+- **NEVER** set `status` manually - only `tick.js answer` does
+- After appending, run `node .claude/chat/check-channel.js`; surface stale-pending in your final summary

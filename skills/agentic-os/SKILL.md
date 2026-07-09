@@ -1,170 +1,239 @@
 ---
 name: agentic-os
-description: Build persistent multi-agent operating systems on Claude Code. Covers kernel architecture, specialist agents, slash commands, file-based memory, scheduled automation, and state management without external databases.
+description: MGTV team's persistent multi-agent runtime on Claude Code. 18 specialist agents + channel protocol (ADR-0001) + kernel CLAUDE.md routing. Covers dispatch triggers, inter-agent Q&A, parallel groups, and the half-self-scheduling constraint.
 metadata:
-  origin: ECC
+  origin: ECC (forked by Yx @ MGTV, 2026-07)
+  supersedes: upstream generic agentic-os pattern
 ---
 
-# Agentic OS
+# Agentic OS (MGTV fork)
 
-Treat Claude Code as a persistent runtime / operating system rather than a chat session. This skill codifies the architecture used by production agentic setups: a kernel config that routes tasks to specialist agents, persistent file-based memory, scheduled automation, and a JSON/markdown data layer.
+This is the **MGTV team's operating manual** for our 18-agent Claude Code runtime. It supersedes the generic ECC upstream pattern with three concrete additions:
+
+1. **Description-based dispatch** — the main agent matches task to specialist via the 5-section `description` template (Use when / Don't use when / Channel / Outputs), not manual intent keywords.
+2. **Channel protocol (ADR-0001)** — subagents that need to ask another role a question write to `.claude/chat/channel.jsonl` and exit; the main agent routes replies. This is the only inter-agent communication channel.
+3. **Half-self-scheduling** — subagents **cannot** spawn sub-subagents. Cross-role work is always routed through the main agent via channel.
+
+Upstream concepts that are still valid: 4-layer architecture, file-based memory, scheduled automation, declarative kernel.
 
 ## When to Activate
 
+- User says "agentic OS", "personal OS", "multi-agent", "agent coordinator", "persistent agent"
 - Building a multi-agent workflow inside Claude Code
 - Setting up persistent Claude Code automation that survives session restarts
-- Creating a "personal OS" or "agentic OS" for recurring tasks
-- User says "agentic OS", "personal OS", "multi-agent", "agent coordinator", "persistent agent"
-- Structuring long-running projects where context must survive across sessions
+- Routing work across the 18 specialist agents (planner / architect / code-explorer / code-reviewer / etc.)
+- Debugging why a subagent didn't dispatch or didn't answer
 
 ## Architecture Overview
 
-The Agentic OS has four layers. Each layer is a directory in your project root.
-
 ```
 project-root/
-├── CLAUDE.md          # Kernel: identity, routing rules, agent registry
-├── agents/            # Specialist agent definitions (markdown prompts)
-├── .claude/commands/  # Slash commands: user-facing CLI
-├── scripts/           # Daemon scripts: scheduled or event-driven tasks
-└── data/              # State: JSON/markdown filesystem, no external DB
+├── CLAUDE.md                # Kernel: agent registry + routing rules + model policies
+├── agents/                  # 18 specialist agent definitions (markdown)
+├── .claude/
+│   ├── rules/               # Auto-loaded rules (multi-agent-chat, guardrails, language)
+│   ├── skills/              # Workflows (multi-agent-chat, code-review, tdd, ...)
+│   ├── commands/            # User-facing slash commands
+│   └── chat/                # Channel protocol: channel.jsonl + tick.js
+├── scripts/                 # Daemon / batch scripts
+└── data/                    # File-based state (JSON + markdown)
 ```
 
 ### Layer Responsibilities
 
 | Layer | Purpose | Persistence |
 |---|---|---|
-| Kernel (`CLAUDE.md`) | Identity, routing, model policies, agent registry | Git-tracked |
-| Agents (`agents/`) | Specialist identities with scoped tools and memory | Git-tracked |
-| Commands (`.claude/commands/`) | User-facing slash commands (`/daily-sync`, `/outreach`) | Git-tracked |
-| Scripts (`scripts/`) | Python/JS daemons triggered by cron or webhooks | Git-tracked |
-| State (`data/`) | Append-only logs, project state, decision records | Git-ignored or tracked |
+| Kernel (`CLAUDE.md`) | Identity, agent registry, routing rules, model policies | Git-tracked |
+| Agents (`agents/*.md`) | Specialist identities with 5-section `description` frontmatter | Git-tracked |
+| Rules (`.claude/rules/`) | Auto-loaded context (multi-agent protocol, language rules, guardrails) | Git-tracked |
+| Skills (`.claude/skills/`) | Workflows invoked by main agent or user (multi-agent-chat, tdd) | Git-tracked |
+| Channel (`.claude/chat/`) | Inter-agent Q&A queue + tick dispatcher | Git-tracked (state) |
+| Commands (`.claude/commands/`) | User-facing slash commands (`/code-review`, `/tdd`) | Git-tracked |
+| Scripts (`scripts/`) | Daemon / batch jobs (Python or Node) | Git-tracked |
+| State (`data/`) | Append-only logs, project state, decision records | Tracked or git-ignored |
 
 ## The Kernel
 
-`CLAUDE.md` is the kernel. It acts as the COO / orchestrator. Claude reads it at session start and uses it to route work.
+`CLAUDE.md` is the kernel. Claude reads it at session start. Two things must be in it for our 18-agent runtime to work:
 
-### Kernel Structure
+1. **Agent Registry** — a table mapping task types to the right agent. This is the main agent's primary dispatch cue. Without it, the main agent defaults to "do it yourself" and never dispatches.
+2. **Routing Rules** — explicit "for non-trivial tasks, dispatch first; do not Edit directly". Without this, the main agent may pick up a planner-shaped task and start implementing.
+
+### Kernel Template
 
 ```markdown
-# CLAUDE.md - Agentic OS Kernel
+# CLAUDE.md — Agentic OS Kernel
 
 ## Identity
-You are the COO of [project-name]. You route tasks to specialist agents.
-You never write code directly. You delegate to the right agent and synthesize results.
+You are the COO of [project]. You **do not write code directly** for non-trivial work.
+You route tasks to specialist agents from the 12-agent registry below. You only
+Edit/Write yourself for trivial changes (single-line typo, < 3 files, pure doc updates).
+For implementation: dispatch to `developer` (auto-detects language), not Edit directly.
 
-## Agent Registry
+## Agent Registry (12 specialist agents)
 
-| Agent | Role | Trigger |
-|---|---|---|
-| @dev | Code, architecture, debugging | User says "build", "fix", "refactor" |
-| @writer | Documentation, content, emails | User says "write", "draft", "blog" |
-| @researcher | Research, analysis, fact-checking | User says "research", "analyze", "compare" |
-| @ops | DevOps, deployment, infrastructure | User says "deploy", "CI", "server" |
+Maps your user's workflow (PM = you = main agent; 9 roles routed to specialists + 3 supporting).
+
+| # | Role | Dispatch to | Trigger keywords |
+|---|---|---|---|
+| 2 | Plan / spec / decompose | `planner` | "design", "decompose", "plan", "how to build", user story |
+| 3 | Architecture / tech choice | `architect` | "architecture", "tech stack", "scalability", tech choice |
+| 4 | Implement / write code | `developer` | "implement", "add feature", "write code", "refactor" + file ext |
+| 5 | Code review (quality) | `code-reviewer` | "review code", "check quality", "is this OK" |
+| 6 | Independent test / QA white-box | `tester` | "test X", "add tests", "verify behavior" |
+| 7 | E2E test / QA black-box / UI verification | `e2e-runner` | "E2E", "playwright", "browser", "screenshot bug" |
+| 8 | UI / interaction / visual design | `interaction-designer` | "design UI", "mockup flow", "how should this look" |
+| 9 | Investigate / trace existing code | `code-explorer` | "how does X work", "investigate", "trace" |
+| 10 | Doc / CODEMAP / ADR update | `doc-updater` | "update docs", "CODEMAP", "ADR" |
+| 11 | Security audit (parallel to code-reviewer) | `security-reviewer` | "security", "vulnerability", "OWASP", "audit" |
+| 12 | Silent failures / swallowed errors | `silent-failure-hunter` | "why no error", "empty catch", "swallowed" |
+| (10) | Dead code / unused cleanup | `refactor-cleaner` | "remove dead", "unused", "cleanup", "ts-prune" |
 
 ## Routing Rules
-1. Parse the user request for intent keywords
-2. Match to the Agent Registry trigger column
-3. Load the corresponding agent file from `agents/<name>.md`
-4. Hand off execution with full context
-5. Synthesize and present the result back to the user
+1. **Parse intent first** — what type of work? (plan / explore / build / review / test / docs / clean / design)
+2. **Match to registry** — pick one agent; if multiple match, prefer the more specific
+3. **Dispatch via Agent tool** — `subagent_type: "<name>"` with full context
+4. **Wait for result** — subagent returns; you synthesize for the user
+5. **For complex tasks** — chain: `planner` (decompose) → `developer` (implement) → `code-reviewer` + `security-reviewer` (parallel review) → `tester` (independent verification)
+6. **If agent declines** — only then Edit/Write directly (and flag in your summary)
+
+## Cross-Role Communication
+- Subagents that need another role's input write to `.claude/chat/channel.jsonl` and exit (see `multi-agent-chat` rule and skill)
+- When the main agent sees pending messages, run `/multi-agent-chat` to drain
+- Each agent has a "Working with Other Agents" section in its prompt listing relevant peers
 
 ## Model Policies
-- Default model: use the repository or harness default.
-- @dev tasks: prefer a higher-reasoning model for complex architecture.
-- @researcher tasks: use the configured research-capable model and approved search tools.
-- Cost ceiling: warn before exceeding the project's configured spend threshold.
+- `planner`, `architect` → opus (complex reasoning)
+- `code-reviewer`, `security-reviewer`, `tester`, `e2e-runner`, `interaction-designer`, `developer` → sonnet
+- `silent-failure-hunter`, `refactor-cleaner`, `doc-updater`, `code-explorer` → sonnet
+- Trivial Edit/Write (yourself) → default
 ```
-
-### Key Principle
-
-The kernel should be **small and declarative**. Routing logic lives in plain markdown tables, not code. This makes the system inspectable and editable without debugging.
 
 ## Specialist Agents
 
-Each agent is a standalone markdown file in `agents/`. Claude loads the relevant agent file when routing a task.
+Each agent is a standalone markdown file in `agents/`. Every one follows the **5-section `description` template** — this is what makes description-based dispatch reliable.
 
-### Agent Definition Format
+### The 5-Section Template (mandatory)
 
-```markdown
-# @dev - Software Engineer
+```yaml
+---
+name: <role>
+description: |
+  <One-sentence role summary>
 
-## Identity
-You are a senior software engineer. You write clean, tested, production-grade code.
-You prefer simple solutions. You ask clarifying questions when requirements are ambiguous.
+  Use when: <trigger 1>, <trigger 2>, ...
+  Don't use when: <boundary 1> (use <other-agent>), <boundary 2>, ...
+  Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
+    - Private question: {from, to:"<role>", kind:"question", ...}
+    - Group question:   {from, to:["a","b"], kind:"question", ...}
+    - Broadcast FYI:    {from, to:"*", kind:"info", ...}
+                       (best-effort: main agent chooses recipients; not guaranteed)
+  After appending, exit. Main agent routes the message and re-invokes you with answers.
 
-## Memory Scope
-- Read `data/projects/<current-project>.md` for context
-- Read `data/decisions/` for architectural decisions
-- Append execution logs to `data/logs/<date>-@dev.md`
-
-## Tool Access
-- Full filesystem access within project root
-- Git operations (status, diff, commit, branch)
-- Test runner access
-- MCP servers as configured in `.claude/mcp.json`
-
-## Constraints
-- Always write tests for new features
-- Never commit directly to `main`; use feature branches
-- Prefer editing existing files over creating new ones
-- Keep functions under 50 lines when possible
+  Outputs: {<field1>, <field2>, ...}
+tools: ["Read", "Grep", "Glob"]   # or wider, but be explicit
+model: opus                       # or sonnet/haiku
+---
 ```
 
-### Multi-Agent Collaboration Pattern
+**Why this template**:
 
-When a task spans multiple agents, the kernel runs them sequentially or in parallel:
+- **Use when** — main agent matches on these triggers; specific keywords > vague intent
+- **Don't use when** — hard redirect to a sibling agent; prevents mis-dispatch
+- **Channel** — subagent knows the protocol and its limitations (broadcast is best-effort)
+- **Outputs** — main agent can verify "did the subagent do the right thing" by checking fields
+- **tools** — narrow scope; planner shouldn't Edit, code-reviewer shouldn't Write
+
+### Real Example: `agents/planner.md`
+
+```yaml
+---
+name: planner
+description: |
+  Planning specialist. Decomposes requirements into ordered tasks with
+  dependencies, risks, and acceptance criteria. Reads code/docs, never writes
+  code or runs commands.
+
+  Use when: user requests new feature, multi-file refactor, architecture
+  change, or asks "how should I build X?". Tasks touching >=3 files or
+  requiring coordination across roles.
+
+  Don't use when: change is trivial (<3 files single concern), purely
+  investigative (use code-explorer), single-line fix, or pure documentation
+  update (use doc-updater).
+
+  Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl: ...
+  After appending, exit. Main agent routes the message and re-invokes you with answers.
+
+  Outputs: {tasks:[{id,title,deps,risk,acceptance}], dependencies:[...],
+            risks:[...], questions_for:[...]}
+tools: ["Read", "Grep", "Glob"]
+model: opus
+---
+```
+
+## Channel-Based Collaboration (ADR-0001)
+
+This is **the only** inter-agent communication mechanism. Subagents do **not** call each other directly. The flow:
 
 ```
-User: "Build a landing page and write the launch blog post"
-
-Kernel routing:
-1. @dev - "Build a landing page with [requirements]"
-2. @writer - "Write a launch blog post for [product] using the landing page copy"
-3. Kernel synthesizes both outputs into a unified response
+planner (subagent)                    main agent
+     |                                    |
+     | 1. append question to              |
+     |    .claude/chat/channel.jsonl      |
+     |    {from:planner, to:architect,    |
+     |     kind:question, msg:...}        |
+     |                                    |
+     | 2. exit                            |
+     |                                    |
+     |          3. main agent sees        |
+     |             pending message        |
+     |                                    |
+     |          4. /multi-agent-chat      |
+     |             → tick.js analyze      |
+     |             → dispatch architect   |
+     |                                    |
+     |                          5. architect answers |
+     |                                    |
+     |          6. tick.js answer         |
+     |             <ts> architect planner|
+     |             question "..."         |
+     |                                    |
+     | 7. main agent re-invokes           |
+     |    planner with answer in context  |
+     |                                    |
+     | 8. planner continues               |
 ```
 
-For parallel execution, use Claude Code's background task capability or shell scripts that invoke Claude Code with specific agent contexts.
+### The Three Message Shapes
 
-## Commands and Daily Workflows
+| Shape | `to` field | `kind` | Use case |
+|---|---|---|---|
+| Private DM | `"<role>"` | `question` / `task` | One specific role has the answer |
+| Group | `["a", "b"]` | `task` / `question` | Parallel work (e.g. code-reviewer + security-reviewer) |
+| Broadcast | `"*"` | `info` | FYI to all; **best-effort** — main agent decides recipients |
 
-Slash commands are markdown files in `.claude/commands/`. They define reusable workflows.
+### Half-Self-Scheduling (CRITICAL constraint)
 
-### Command Structure
+**Subagents cannot spawn sub-subagents.** This is a Claude Code architectural limit. Consequences:
 
-```markdown
-# /daily-sync
+- A subagent that needs another role's input **must** write to channel + exit
+- The main agent is the **only** entity that can dispatch other agents
+- If your subagent's prompt says "you can call architect", that's wrong — write to channel instead
+- Cost per Q&A round = ~3 Agent calls (main scans + main dispatches target + main re-dispatches you with answer)
 
-Run the morning briefing:
+**Anti-pattern**: do not `Bash sleep` waiting for a reply. Append + exit. The main agent will re-invoke you when the answer arrives.
 
-1. Read `data/logs/last-sync.md` for context
-2. Check project status: `git status`, pending PRs, CI health
-3. Review `data/inbox/` for new tasks or decisions needed
-4. Generate a summary of blockers, priorities, and next actions
-5. Append the briefing to `data/logs/daily/<date>.md`
-```
+### Channel Maintenance
 
-### Standard Command Set
-
-| Command | Purpose |
-|---|---|
-| `/daily-sync` | Morning briefing: status, blockers, priorities |
-| `/outreach` | Run outreach workflow (email, LinkedIn, etc.) |
-| `/research <topic>` | Deep research with citation tracking |
-| `/apply-jobs` | Tailor resume + cover letter for a target role |
-| `/analytics` | Pull metrics from Stripe, GitHub, or custom sources |
-| `/interview-prep` | Generate flashcards or mock interview questions |
-| `/decision <topic>` | Log a decision with pros/cons and chosen path |
-
-### Activating Commands
-
-Place command files in `.claude/commands/<command-name>.md`. Claude Code auto-discovers them. Users invoke them with `/<command-name>`.
+- File: `.claude/chat/channel.jsonl` (append-only)
+- Cleanup: archive done messages older than 30 days via `.claude/chat/archive-channel.js`
+- Stale check: `.claude/chat/check-channel.js` flags pending > 60s
+- Self-check before subagent exit: run `check-channel.js` and surface stale-pending in your final summary
 
 ## Persistent Memory
 
 Memory is file-based. No vector DB, no Redis, no PostgreSQL. JSON and markdown files in `data/` are the database.
-
-### Memory Directory Structure
 
 ```
 data/
@@ -176,213 +245,52 @@ data/
 └── templates/          # Reusable prompts and formats
 ```
 
-### Daily Log Format
+### When to use memory vs channel
 
-```markdown
-# 2026-04-22 - Daily Log
-
-## Sessions
-- 09:00 - Session 1: Refactored auth module (@dev)
-- 11:30 - Session 2: Drafted investor update (@writer)
-
-## Decisions
-- Switched from JWT to session cookies (see `data/decisions/2026-04-22-auth.md`)
-
-## Blockers
-- Waiting on API key from vendor (follow up 2026-04-24)
-
-## Next Actions
-- [ ] Merge auth refactor PR
-- [ ] Send investor update for review
-```
-
-### Auto-Reflection Pattern
-
-At the end of each session, the kernel appends a reflection:
-
-```markdown
-## Reflection - Session 3
-- What worked: Parallel agent execution saved 20 minutes
-- What didn't: @researcher hit a paywalled source, need better source ranking
-- What to change: Add `source-tier` field to research notes (A/B/C credibility)
-```
-
-This creates a feedback loop that improves the system over time without code changes.
+| Need | Use | Why |
+|---|---|---|
+| Persistent across sessions | `data/` files | Survives session restart |
+| Single-session cross-agent Q&A | `channel.jsonl` | Ephemeral, structured, self-cleaning |
+| Daily log of what happened | `data/daily-logs/<date>.md` | Append-only audit trail |
+| Cross-session agent state | `data/projects/<name>.json` | Structured resume context |
 
 ## Scheduled Automation
 
-Agentic OS tasks run on a schedule using external cron, not Claude Code's built-in cron (which dies when the session ends).
-
-### macOS: LaunchAgent
-
-```xml
-<!-- ~/Library/LaunchAgents/com.agentic.daily-sync.plist -->
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ...>
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.agentic.daily-sync</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/claude</string>
-        <string>--cwd</string>
-        <string>/path/to/project</string>
-        <string>--command</string>
-        <string>/daily-sync</string>
-    </array>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>8</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>/tmp/agentic-daily-sync.log</string>
-</dict>
-</plist>
-```
-
-### Linux: systemd Timer
-
-```ini
-# ~/.config/systemd/user/agentic-daily-sync.service
-[Unit]
-Description=Agentic OS Daily Sync
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/claude --cwd /path/to/project --command /daily-sync
-```
-
-```ini
-# ~/.config/systemd/user/agentic-daily-sync.timer
-[Unit]
-Description=Run daily sync every morning
-
-[Timer]
-OnCalendar=*-*-* 8:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-### Cross-Platform: pm2
-
-```bash
-# ecosystem.config.js
-module.exports = {
-  apps: [{
-    name: 'agentic-daily-sync',
-    script: 'claude',
-    args: '--cwd /path/to/project --command /daily-sync',
-    cron_restart: '0 8 * * *',
-    autorestart: false
-  }]
-};
-```
+Agentic OS tasks run on external cron (LaunchAgent / systemd / pm2 / Windows Task Scheduler), not Claude Code's built-in cron (which dies when the session ends). Scripts in `scripts/` should be standalone — don't depend on a live Claude session.
 
 ## Data Layer
 
-The data layer is your filesystem. Use JSON for structured data and markdown for narrative content.
-
-### JSON for Structured State
-
-```json
-// data/projects/website-v2.json
-{
-  "name": "Website v2",
-  "status": "in-progress",
-  "milestone": "beta-launch",
-  "agents_involved": ["@dev", "@writer"],
-  "files": {
-    "spec": "docs/website-v2-spec.md",
-    "design": "designs/website-v2.fig"
-  },
-  "metrics": {
-    "commits": 47,
-    "last_session": "2026-04-22T11:30:00Z"
-  }
-}
-```
-
-### Markdown for Narrative
-
-Use markdown for anything a human reads: decisions, logs, research notes, contact records.
-
-### Schema Evolution
-
-Never rename existing fields. Add new fields and mark old ones deprecated:
-
-```json
-{
-  "name": "Website v2",
-  "status": "in-progress",
-  "milestone": "beta-launch",
-  "_deprecated_priority": "high",
-  "priority_v2": { "level": "high", "rationale": "Blocks investor demo" }
-}
-```
-
-This keeps historical data readable without migration scripts.
+JSON for structured state, markdown for narrative. Never rename existing fields — add new and mark old deprecated. Schema evolution without migration scripts.
 
 ## Anti-Patterns
 
-### Monolithic Single Agent
+### ❌ Monolithic single agent
+"You are a full-stack developer, writer, researcher, and DevOps engineer." — Split into specialists; the kernel routes.
 
-```markdown
-# BAD - One agent does everything
-You are a full-stack developer, writer, researcher, and DevOps engineer.
-```
+### ❌ Main agent Edit/Write without dispatch
+Main agent picks up a planner-shaped task and starts implementing. — The kernel must say "dispatch first".
 
-Split into specialist agents. The kernel handles routing.
+### ❌ Subagent tries to spawn sub-subagent
+Subagent reads `## Agent Registry`, picks another agent, and tries to dispatch. — **Cannot work**; write to channel + exit instead.
 
-### Stateless Sessions
+### ❌ Subagent polls channel for reply
+`Bash sleep 5 && cat .claude/chat/channel.jsonl` waiting for answer. — Append + exit; main agent re-invokes you.
 
-```markdown
-# BAD - No memory between sessions
-Starting fresh every time Claude Code opens.
-```
+### ❌ Manual intent-keyword matching in kernel
+Kernel has `if (msg.includes("deploy")) dispatch ops` as code. — Keep declarative in markdown tables; the 18 agents' `description` frontmatter is the matching layer.
 
-Always read `data/` at session start and write back at session end.
-
-### Hardcoded Credentials
-
-```markdown
-# BAD - API keys in agent files or CLAUDE.md
-Your OpenAI API key is sk-xxxxxxxx
-```
-
-Use environment variables or a `.env` file loaded by scripts. Agents reference `process.env.API_KEY`.
-
-### External Database for Simple State
-
-```markdown
-# BAD - PostgreSQL for a solo user's agentic OS
-```
-
-Use JSON/markdown files until you have multiple concurrent users or GBs of data.
-
-### Over-Engineered Routing
-
-```markdown
-# BAD - Routing logic in code instead of markdown tables
-if (intent.includes('deploy')) { agent = opsAgent; }
-```
-
-Keep routing declarative in `CLAUDE.md` markdown tables. It is inspectable, editable, and debuggable.
+### ❌ External DB for solo project
+PostgreSQL for a single user's notes. — Use JSON/markdown in `data/` until you have concurrent users or GBs of data.
 
 ## Best Practices
 
-- [ ] `CLAUDE.md` is under 200 lines and fits in context window
-- [ ] Each agent file is under 100 lines and focused on one domain
-- [ ] `data/` is git-ignored for sensitive logs, git-tracked for decisions and specs
-- [ ] Commands use imperative names: `/daily-sync`, not `/run-daily-sync`
-- [ ] Logs are append-only; never edit past daily logs
-- [ ] Every agent has a `Memory Scope` section defining what files it reads
-- [ ] Reflections are written at the end of every session
-- [ ] Scheduled tasks use external cron (LaunchAgent, systemd, pm2), not Claude Code's session cron
-- [ ] Cost tracking: log API spend per session in `data/logs/<date>-costs.json`
-- [ ] One project = one Agentic OS. Do not share a single `CLAUDE.md` across unrelated projects.
+- [ ] Kernel `CLAUDE.md` is under 200 lines, declarative, contains Agent Registry + Routing Rules
+- [ ] Every agent's `description` uses the 5-section template (Use when / Don't use when / Channel / Outputs)
+- [ ] Every agent's `tools` is explicit (don't grant Edit/Write to read-only agents like planner)
+- [ ] Cross-role Q&A goes through channel — never subagent-to-subagent direct
+- [ ] Subagents append + exit; do not poll
+- [ ] Channel `done` messages older than 30 days are archived
+- [ ] `data/` is git-ignored for sensitive logs, tracked for decisions and specs
+- [ ] Memory scope per agent is explicit ("read `data/projects/X.md`")
+- [ ] One project = one kernel. Don't share `CLAUDE.md` across unrelated projects.
+- [ ] When adding a new agent, validate its `description` against the 5-section template before commit
