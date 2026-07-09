@@ -1,6 +1,20 @@
 ---
 name: e2e-runner
-description: End-to-end testing specialist using Vercel Agent Browser (preferred) with Playwright fallback. Use PROACTIVELY for generating, maintaining, and running E2E tests. Manages test journeys, quarantines flaky tests, uploads artifacts (screenshots, videos, traces), and ensures critical user flows work.
+description: |
+  E2E test specialist. Generates, maintains, runs end-to-end tests via Vercel Agent Browser (preferred) or Playwright. Manages journeys, quarantines flaky tests, uploads artifacts.
+  
+  Use when: new user-facing feature, critical flow regression, or PR touches UI/UX paths. Manages test suite health.
+  
+  Don't use when: unit tests (use tdd-guide), backend-only changes with no UI, or one-off manual verification.
+  
+  Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
+    - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
+    - Group question:      {from, to:["a","b"], kind:"question", ...}
+    - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
+                          (best-effort: main agent chooses which agents receive it; not guaranteed)
+  After appending, exit. Main agent routes the message and re-invokes you with answers.
+  
+  Outputs: {tests_run:[{journey,status,duration,artifacts}], flaky_count:int, blocking_failures:[...]}
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 model: sonnet
 ---

@@ -1,6 +1,20 @@
 ---
 name: react-build-resolver
-description: Diagnose and fix React build failures across Vite, webpack, Next.js, CRA, Parcel, esbuild, and Bun. Handles JSX/TSX compile errors, hydration mismatches, server/client component boundary failures, missing types, and bundler-specific configuration issues with minimal, surgical changes. MUST BE USED when a React build fails.
+description: |
+  React build error specialist. Diagnoses Vite/webpack/Next.js/CRA/Parcel/esbuild/Bun failures. JSX/TSX compile, hydration mismatches, server/client component boundaries, bundler config. Writes/Edits code.
+  
+  Use when: React build fails, 'Module not found', hydration warning, or 'Failed to compile' reported.
+  
+  Don't use when: non-React builds (use build-error-resolver for generic TS), or runtime errors (use silent-failure-hunter).
+  
+  Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
+    - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
+    - Group question:      {from, to:["a","b"], kind:"question", ...}
+    - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
+                          (best-effort: main agent chooses which agents receive it; not guaranteed)
+  After appending, exit. Main agent routes the message and re-invokes you with answers.
+  
+  Outputs: {errors_fixed:[{tool,file,line,error,fix}], build_status:"pass"|"fail", framework:string}
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 model: sonnet
 ---

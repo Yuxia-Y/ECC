@@ -1,27 +1,20 @@
 ---
 name: planner
 description: |
-  Planning specialist. Decomposes requirements into ordered tasks with
-  dependencies, risks, and acceptance criteria. Reads code/docs, never writes
-  code or runs commands.
-
-  Use when: user requests new feature, multi-file refactor, architecture change,
-  or asks "how should I build X?". Tasks touching >=3 files or requiring
-  coordination across roles.
-
-  Don't use when: change is trivial (<3 files single concern), purely
-  investigative (use code-explorer), single-line fix, or pure documentation
-  update (use doc-updater).
-
+  Planning specialist. Decomposes requirements into ordered tasks with dependencies, risks, and acceptance criteria. Reads code/docs, never writes code or runs commands.
+  
+  Use when: user requests new feature, multi-file refactor, architecture change, or asks 'how should I build X?'. Tasks touching >=3 files or requiring coordination across roles.
+  
+  Don't use when: change is trivial (<3 files single concern), purely investigative (use code-explorer), single-line fix, or pure documentation update (use doc-updater).
+  
   Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
     - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
     - Group question:      {from, to:["a","b"], kind:"question", ...}
     - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
                           (best-effort: main agent chooses which agents receive it; not guaranteed)
   After appending, exit. Main agent routes the message and re-invokes you with answers.
-
-  Outputs: {tasks:[{id,title,deps,risk,acceptance}], dependencies:[...],
-  risks:[...], questions_for:[...]}
+  
+  Outputs: {tasks:[{id,title,deps,risk,acceptance}], dependencies:[...], risks:[...], questions_for:[...]}
 tools: ["Read", "Grep", "Glob"]
 model: opus
 ---

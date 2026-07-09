@@ -1,6 +1,20 @@
 ---
 name: code-reviewer
-description: Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use immediately after writing or modifying code. MUST BE USED for all code changes.
+description: |
+  Code review specialist. Reviews code for quality, security, and maintainability. Reads code, never writes/modifies.
+  
+  Use when: implementation just finished, PR is being prepared, or user asks for a code review. Triggers automatically after code changes.
+  
+  Don't use when: security-focused audit (use security-reviewer), language-specific patterns (use typescript-reviewer / python-reviewer / java-reviewer), or task is just investigation (use code-explorer).
+  
+  Cross-role communication (ADR-0001) via .claude/chat/channel.jsonl:
+    - Private question:    {from, to:"<role>", kind:"question", msg, status:"pending"}
+    - Group question:      {from, to:["a","b"], kind:"question", ...}
+    - Broadcast FYI:       {from, to:"*", kind:"info", msg, status:"pending"}
+                          (best-effort: main agent chooses which agents receive it; not guaranteed)
+  After appending, exit. Main agent routes the message and re-invokes you with answers.
+  
+  Outputs: {findings:[{severity,file,line,issue,suggestion}], approved:bool, blocking_count:int}
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
 ---
