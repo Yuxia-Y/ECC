@@ -75,7 +75,8 @@ function check(opts = {}) {
       continue;
     }
     const age = now - t;
-    if (age > staleMs) {
+    // ponytail: >= 而非 >，staleMs=0 时 (0ms 旧) 也应判 stale，符合"0 阈值=立即 stale"直觉
+    if (age >= staleMs) {
       staleMsgs.push({ ...m, ageMs: age });
     } else {
       freshMsgs.push({ ...m, ageMs: age });
